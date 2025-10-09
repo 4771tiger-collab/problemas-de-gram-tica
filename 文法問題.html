@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ポルトガル語 文法学習アプリ</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Interフォント設定 */
+        body { font-family: 'Inter', sans-serif; }
+        /* カスタムスクロールバーのスタイル (任意) */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        /* AI生成エリアをスティッキーにするための調整 */
+        .sticky-area { top: 0; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-4 md:p-8">
+    <div id="app" class="max-w-4xl mx-auto">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-extrabold text-teal-400 mb-2">ポルトガル語 文法トレーニング</h1>
+            <p class="text-gray-400">例文を参考に、AIで正誤判定をしたり、新しい問題を作成して学習しましょう。</p>
+        </header>
+
+        <main class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- 左側: 問題リスト -->
+            <div class="md:col-span-2 space-y-8">
+                <section>
+                    <h2 class="text-2xl font-bold text-teal-300 mb-4 border-b border-teal-500 pb-2">練習問題と正誤判定</h2>
+                    <div id="topics-container" class="space-y-6">
+                        <!-- 問題トピックがここにレンダリングされます -->
+                    </div>
+                </section>
+            </div>
+
+            <!-- 右側: AI生成ツール -->
+            <div class="md:col-span-1">
+                <div class="bg-gray-800 p-6 rounded-xl shadow-2xl sticky-area">
+                    <h2 class="text-2xl font-bold text-teal-300 mb-4 border-b border-teal-500 pb-2">AI 問題生成</h2>
+                    
+                    <div class="space-y-4">
+                        <label for="generator-select" class="block text-sm font-medium text-gray-300">テーマを選ぶ:</label>
+                        <select id="generator-select" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-teal-500 focus:border-teal-500 text-white">
+                            <!-- オプションがJSで追加されます -->
+                        </select>
+                        
+                        <button onclick="generateNewProblem()" id="generate-button" 
+                                class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 rounded-xl transition duration-300 shadow-md shadow-teal-900 flex items-center justify-center">
+                            <span id="generate-text">新しい問題を生成</span>
+                            <svg id="generate-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div id="generated-problem-container" class="mt-6 p-4 bg-gray-700 rounded-lg border border-gray-600 hidden">
+                        <p class="text-sm font-medium text-teal-400 mb-2">AIが生成した問題</p>
+                        <p id="generated-japanese" class="text-lg font-semibold text-white"></p>
+                        <input type="text" id="generated-answer-input" placeholder="ポルトガル語で解答を入力" class="w-full mt-3 p-2 bg-gray-600 border border-gray-500 rounded-lg text-white">
+                        <button onclick="checkGeneratedAnswer()" id="check-generated-button" class="w-full mt-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl transition duration-300 shadow-md shadow-indigo-900 flex items-center justify-center">
+                            <span id="check-generated-text">解答を判定</span>
+                            <svg id="check-generated-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </button>
+                        <div id="generated-result" class="mt-3 p-3 text-sm rounded-lg transition-all duration-300"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- エラーメッセージ表示エリア -->
+        <div id="error-message" class="fixed bottom-4 right-4 bg-red-700 text-white p-3 rounded-lg shadow-xl hidden"></div>
+
+    </div>
+
+    <script>
+        // グローバル変数 (Canvas環境に存在する前提)
+        const apiKey = "";
+        const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=" + apiKey;
+        
+        // Web Speech APIのインスタンス
+        const speechSynthesizer = window.speechSynthesis;
+        let portugueseVoice = null;
+        
+        // ポルトガル語学習のトピックデータ
+        const grammarTopics = [
+            {
+                id: 'topic1',
+                title: '① 主格代名詞 (eu, você, ele, ela...)',
+                keywords: 'eu, você, ele, ela, nós, vocês, eles, elas',
+                description: '人称代名詞を正しく使って文を構成します。',
+                examples: [
+                    // jp: ポルトガル語の原文, pt: 日本語訳
+                    { jp: 'Eu sou estudante。', pt: '私は学生です。' },
+                    { jp: 'Você é meu amigo。', pt: 'あなたは私の友達です。' },
+                    { jp: 'Ele mora no Brasil。', pt: '彼はブラジルに住んでいます。' },
+                    { jp: 'Nós falamos português。', pt: '私たちはポルトガル語を話します。' },
+                    { jp: 'Elas gostam de música。', pt: '彼女たちは音楽が好きです。' },
+                ],
+                exercises: [
+                    { jp: '私は日本人です。' },
+                    { jp: '彼は先生です。' },
+                    { jp: 'あなたたちは学生です。' },
+                ]
+            },
+            {
+                id: 'topic2',
+                title: '② A＝B の表現 (ser動詞)',
+                keywords: 'ser, sou, é, somos, são',
+                description: 'be動詞にあたる ser 動詞を使って、恒久的な性質や状態を表します。',
+                examples: [
+                    { jp: 'Eu sou professor。', pt: '私は先生です。' },
+                    { jp: 'Você é alto。', pt: 'あなたは背が高いです。' },
+                    { jp: 'Ela é médica。', pt: '彼女は医者です。' },
+                    { jp: 'Nós somos amigos。', pt: '私たちは友達です。' },
+                    { jp: 'Eles são brasileiros。', pt: '彼らはブラジル人です。' },
+                ],
+                exercises: [
+                    { jp: '私たちは空手家です。' },
+                    { jp: '彼は優しいです。' },
+                    { jp: 'あなたは強いです。' },
+                ]
+            },
+            {
+                id: 'topic3',
+                title: '③ 指示代名詞 (este, esse, aquele)',
+                keywords: 'este, esta, esse, essa, aquele, aquela, isto, isso, aquilo',
+                description: '指示代名詞を使って、物や人を指し示します。',
+                examples: [
+                    { jp: 'Este livro é interessante。', pt: 'この本は面白いです。' },
+                    { jp: 'Essa casa é grande。', pt: 'その家は大きいです。' },
+                    { jp: 'Aquele carro é caro。', pt: 'あの車は高いです。' },
+                    { jp: 'Este café está quente。', pt: 'このコーヒーは熱いです。' },
+                    { jp: 'Aquela mulher é bonita。', pt: 'あの女性は美しいです。' },
+                ],
+                exercises: [
+                    { jp: 'これは私のペンです。' },
+                    { jp: 'その犬はかわいいです。' },
+                    { jp: 'あの店は安いです。' },
+                ]
+            },
+            {
+                id: 'topic4',
+                title: '④ ～がほしい／～したい (querer動詞)',
+                keywords: 'querer, quero, quer, queremos, querem',
+                description: 'querer動詞を使って、「〜がほしい」「〜したい」という願望を表現します。',
+                examples: [
+                    { jp: 'Eu quero café。', pt: '私はコーヒーがほしい。' },
+                    { jp: 'Você quer dormir。', pt: 'あなたは寝たい。' },
+                    { jp: 'Nós queremos viajar。', pt: '私たちは旅行したい。' },
+                    { jp: 'Ela quer água。', pt: '彼女は水がほしい。' },
+                    { jp: 'Eles querem jogar futebol。', pt: '彼らはサッカーをしたい。' },
+                ],
+                exercises: [
+                    { jp: '私はパンがほしい。' },
+                    { jp: 'あなたは何がしたいですか？' },
+                    { jp: '私たちは昼ごはんを食べたい。' },
+                ]
+            },
+            {
+                id: 'topic5',
+                title: '⑤ ～を知っている (saber動詞)',
+                keywords: 'saber, sei, sabe, sabemos, sabem',
+                description: 'saber動詞を使って、知識や技能を持っていることを表現します。',
+                examples: [
+                    { jp: 'Eu sei falar japonês。', pt: '私は日本語を話す方法を知っています。' },
+                    { jp: 'Você sabe nadar。', pt: 'あなたは泳ぎ方を知っています。' },
+                    { jp: 'Nós sabemos cozinhar。', pt: '私たちは料理の仕方を知っています。' },
+                    { jp: 'Ele sabe tudo。', pt: '彼はすべてを知っている。' },
+                    { jp: 'Eu não sei a resposta。', pt: '私は答えを知りません。' },
+                ],
+                exercises: [
+                    { jp: '私はその歌を知っています。' },
+                    { jp: 'あなたは彼を知っていますか？' },
+                    { jp: '私はまだ方法を知らない。' },
+                ]
+            },
+            {
+                id: 'topic6',
+                title: '⑥ ～ができる (poder動詞)',
+                keywords: 'poder, posso, pode, podemos, podem',
+                description: 'poder動詞を使って、能力や可能性を表現します。',
+                examples: [
+                    { jp: 'Eu posso correr rápido。', pt: '私は速く走ることができる。' },
+                    { jp: 'Você pode ajudar?', pt: '手伝ってくれますか？' },
+                    { jp: 'Nós podemos estudar juntos。', pt: '一緒に勉強できます。' },
+                    { jp: 'Ela pode vir amanhã。', pt: '彼女は明日来ることができる。' },
+                    { jp: 'Eles podem falar inglês。', pt: '彼らは英語を話すことができる。' },
+                ],
+                exercises: [
+                    { jp: '私は行くことができます。' },
+                    { jp: 'あなたはそれを言えますか？' },
+                    { jp: '彼は泳ぐことができません。' },
+                ]
+            },
+            {
+                id: 'topic7',
+                title: '⑦ ～しなければならない (ter que)',
+                keywords: 'ter que, tenho que, tem que, temos que, têm que',
+                description: 'ter que + 動詞の原形 で、義務や必要性を表現します。',
+                examples: [
+                    { jp: 'Eu tenho que trabalhar。', pt: '私は働かなければならない。' },
+                    { jp: 'Você tem que estudar。', pt: 'あなたは勉強しなければならない。' },
+                    { jp: 'Nós temos que sair agora。', pt: '私たちは今出発しなければならない。' },
+                    { jp: 'Ela tem que dormir cedo。', pt: '彼女は早く寝なければならない。' },
+                    { jp: 'Eles têm que treinar。', pt: '彼らは練習しなければならない。' },
+                ],
+                exercises: [
+                    { jp: '私は宿題をしなければならない。' },
+                    { jp: 'あなたは謝らなければならない。' },
+                    { jp: '私たちは早く起きなければならない。' },
+                ]
+            },
+            {
+                id: 'topic8',
+                title: '⑧ ～する必要がある (precisar de)',
+                keywords: 'precisar de, preciso de, precisa de, precisamos de, precisam de',
+                description: 'precisar de (物) または precisar + 動詞の原形 で、必要性を表現します。',
+                examples: [
+                    { jp: 'Eu preciso de dinheiro。', pt: '私はお金が必要です。' },
+                    { jp: 'Você precisa de ajuda。', pt: 'あなたは助けが必要です。' },
+                    { jp: 'Nós precisamos de tempo。', pt: '私たちは時間が必要です。' },
+                    { jp: 'Ela precisa de estudar mais。', pt: '彼女はもっと勉強する必要がある。' },
+                    { jp: 'Eles precisam de dormir。', pt: '彼らは眠る必要がある。' },
+                ],
+                exercises: [
+                    { jp: '私は休みが必要です。' },
+                    { jp: 'あなたは水が必要です。' },
+                    { jp: '私たちは新しい家が必要です。' },
+                ]
+            },
+            {
+                id: 'topic9',
+                title: '⑨ 疑問詞 (o que, qual, quanto, como, quando, onde, por que, quem)',
+                keywords: 'o que, qual, quanto, como, quando, onde, por que, quem',
+                description: '様々な疑問詞を使った疑問文を構成します。',
+                examples: [
+                    { jp: 'O que você faz?', pt: 'あなたは何をしていますか？' },
+                    { jp: 'Onde você mora?', pt: 'あなたはどこに住んでいますか？' },
+                    { jp: 'Quando é seu aniversário?', pt: 'あなたの誕生日はいつですか？' },
+                    { jp: 'Como você está?', pt: '元気ですか？' },
+                    { jp: 'Por que você está triste?', pt: 'どうして悲しいのですか？' },
+                ],
+                exercises: [
+                    { jp: 'あなたはどこへ行きますか？' },
+                    { jp: 'いつ学校へ行きますか？' },
+                    { jp: '彼は誰ですか？' },
+                ]
+            },
+        ];
+
+        // --- 音声合成（Web Speech API）初期化 ---
+        
+        // 利用可能な音声リストを取得し、ポルトガル語の音声を設定
+        function setPortugueseVoice() {
+            // ブラウザが音声リストをロードするのを待つ
+            const voices = speechSynthesizer.getVoices();
+            
+            // ポルトガル語（ブラジル pt-BR または ポルトガル pt-PT）の音声を探す
+            portugueseVoice = voices.find(voice => voice.lang.startsWith('pt-'));
+
+            // 見つからない場合は、英語など他の言語の音声を使う可能性もあるが、ここでは pt-BR または pt-PT に限定
+            if (!portugueseVoice) {
+                console.warn("ポルトガル語の音声が見つかりませんでした。OS/ブラウザの設定を確認してください。");
+                // 見つからない場合は、デフォルトの音声で言語コード 'pt-BR' を設定して試す
+            }
+        }
+        
+        // ロード時に一度音声リストを設定
+        speechSynthesizer.onvoiceschanged = setPortugueseVoice;
+        if (speechSynthesizer.getVoices().length > 0) {
+            setPortugueseVoice(); // すでにロードされていた場合はすぐに設定
+        }
+        
+        // 例文の音声再生（Web Speech APIを使用）
+        function speakExample(portugueseText, buttonElement) {
+            if (!('speechSynthesis' in window)) {
+                showErrorMessage('お使いのブラウザは音声合成に対応していません。');
+                return;
+            }
+
+            // 現在再生中の音声があれば停止
+            if (speechSynthesizer.speaking) {
+                speechSynthesizer.cancel();
+            }
+
+            const utterance = new SpeechSynthesisUtterance(portugueseText);
+            
+            // ポルトガル語の音声が特定できていれば設定
+            if (portugueseVoice) {
+                utterance.voice = portugueseVoice;
+            } else {
+                // 音声が見つからなくても、言語コードだけは指定して発音を試みる
+                utterance.lang = 'pt-BR'; 
+            }
+            
+            utterance.rate = 1.0; // 再生速度
+            
+            // 再生開始時にボタンを無効化
+            utterance.onstart = () => {
+                buttonElement.disabled = true;
+                buttonElement.classList.add('opacity-50', 'cursor-not-allowed');
+            };
+
+            // 再生終了時にボタンを有効化
+            utterance.onend = () => {
+                buttonElement.disabled = false;
+                buttonElement.classList.remove('opacity-50', 'cursor-not-allowed');
+            };
+
+            // エラー時
+            utterance.onerror = (event) => {
+                showErrorMessage('音声再生エラーが発生しました: ' + event.error);
+                buttonElement.disabled = false;
+                buttonElement.classList.remove('opacity-50', 'cursor-not-allowed');
+            };
+
+            speechSynthesizer.speak(utterance);
+        }
+
+        // --- UIレンダリング関数 ---
+
+        // アプリケーション起動時にトピックと問題をレンダリング
+        window.onload = function() {
+            renderTopics();
+            renderGeneratorOptions();
+        };
+
+        function renderTopics() {
+            const container = document.getElementById('topics-container');
+            container.innerHTML = grammarTopics.map(topic => `
+                <div id="${topic.id}" class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700">
+                    <h3 class="text-xl font-semibold text-white mb-3">${topic.title}</h3>
+                    <p class="text-sm text-gray-400 mb-4">${topic.description}</p>
+                    
+                    <!-- 例文エリア (音声再生ボタン付き) -->
+                    <div class="mb-4 p-3 bg-gray-700 rounded-lg">
+                        <p class="font-medium text-teal-400 mb-2">【例文】</p>
+                        ${topic.examples.map(ex => `
+                            <div class="flex items-center text-gray-300 text-sm mb-1">
+                                <p>${ex.jp} <span class="text-teal-400 font-mono">→</span> ${ex.pt}</p>
+                                <!-- Web Speech API を使用する関数にポルトガル語の原文 (ex.jp) を渡す -->
+                                <button onclick="speakExample('${ex.jp.replace(/'/g, "\\'")}', this)" 
+                                    class="tts-button ml-3 text-teal-300 hover:text-teal-500 transition duration-150 p-1 rounded-full hover:bg-gray-600" title="音声再生">
+                                    <svg class="h-5 w-5 pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 3v14a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 5.343a1 1 0 010 1.414.997.997 0 01-.012.012l.012-.012 3.536 3.536-3.536 3.536a1 1 0 11-1.414-1.414L16.243 10l-3.536-3.536a1 1 0 011.414-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <!-- 練習問題エリア -->
+                    <p class="font-medium text-teal-400 mb-2">【練習問題】</p>
+                    ${topic.exercises.map((ex, index) => `
+                        <div class="flex flex-col md:flex-row items-start md:items-center mb-4 p-3 bg-gray-700 rounded-lg">
+                            <label class="w-full md:w-1/3 text-gray-300 font-medium mb-2 md:mb-0">${ex.jp} →</label>
+                            <input type="text" id="${topic.id}-q${index}" 
+                                class="w-full md:w-1/3 p-2 mr-4 bg-gray-600 border border-gray-500 rounded-lg text-white" 
+                                placeholder="ポルトガル語で解答を入力" data-jp="${ex.jp}" data-topic="${topic.title}">
+                            <button onclick="checkAnswer('${topic.id}', ${index}, this)" 
+                                class="check-button w-full md:w-auto mt-2 md:mt-0 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-xl transition duration-300 shadow-md shadow-indigo-900 flex items-center justify-center">
+                                <span class="button-text">判定</span>
+                                <svg class="spinner animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </button>
+                            <div id="${topic.id}-result${index}" class="result-area w-full md:w-1/3 mt-2 md:mt-0 md:ml-4 text-sm rounded-lg transition-all duration-300"></div>
+                        </div>
+                    `).join('')}
+                </div>
+            `).join('');
+        }
+
+        function renderGeneratorOptions() {
+            const select = document.getElementById('generator-select');
+            select.innerHTML = grammarTopics.map(topic => 
+                `<option value="${topic.id}" data-keywords="${topic.keywords}" data-examples="${topic.examples.map(ex => `${ex.jp} -> ${ex.pt}`).join('; ')}">${topic.title}</option>`
+            ).join('');
+        }
+        
+        // エラーメッセージの表示
+        function showErrorMessage(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            setTimeout(() => {
+                errorDiv.classList.add('hidden');
+            }, 5000);
+        }
+
+        // --- AI APIラッパー関数 (指数バックオフ付き) ---
+        
+        async function callGemini(payload, url = API_URL, maxRetries = 3) {
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.status === 429 && attempt < maxRetries - 1) {
+                        // 429 Too Many Requests: Exponential backoff
+                        const delay = Math.pow(2, attempt) * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(`APIリクエストエラー: ${response.statusText} (Status: ${response.status})`);
+                    }
+
+                    const result = await response.json();
+                    
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) {
+                        throw new Error("AIからの応答が空です。");
+                    }
+                    
+                    // JSON応答のパースを試みる
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        // JSONでない場合は生テキストを返す（問題生成の生のテキスト応答対策）
+                        return text;
+                    }
+
+                } catch (error) {
+                    console.error("Gemini API呼び出しエラー:", error);
+                    if (attempt === maxRetries - 1) {
+                        throw new Error("AI処理中にエラーが発生しました。時間を置いて再度お試しください。");
+                    }
+                }
+            }
+        }
+
+
+        // --- 正誤判定ロジック ---
+
+        async function checkAnswer(topicId, index, buttonElement) {
+            const inputElement = document.getElementById(`${topicId}-q${index}`);
+            const resultDiv = document.getElementById(`${topicId}-result${index}`);
+            
+            const japanesePhrase = inputElement.dataset.jp;
+            const topicTitle = inputElement.dataset.topic;
+            const userAnswer = inputElement.value.trim();
+
+            if (!userAnswer) {
+                resultDiv.textContent = '解答を入力してください。';
+                resultDiv.className = 'result-area w-full md:w-1/3 mt-2 md:mt-0 md:ml-4 text-sm p-3 bg-yellow-900/50 text-yellow-300 rounded-lg transition-all duration-300';
+                return;
+            }
+
+            // ローディング表示
+            toggleLoading(buttonElement, true);
+
+            const systemPrompt = "あなたはポルトガル語の文法と語彙の専門家です。日本語の例文とユーザーのポルトガル語訳が与えられます。文法、語彙、文脈の正確さに基づいて、その翻訳が正しいかどうかを**厳密に**判断してください。判定結果をJSON形式で返してください。**正解の文がない場合は、正しい文を提示してください。**";
+            const userQuery = `文法テーマ: ${topicTitle}\n日本語の例文: ${japanesePhrase}\nユーザーのポルトガル語訳: ${userAnswer}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            "isCorrect": { "type": "BOOLEAN" },
+                            "message": { "type": "STRING", "description": "簡潔なフィードバックメッセージ。" },
+                            "correctAnswer": { "type": "STRING", "description": "もしisCorrectがfalseの場合の正しいポルトガル語の文。必要なければ空にする。" }
+                        },
+                        "required": ["isCorrect", "message"]
+                    }
+                }
+            };
+
+            try {
+                const response = await callGemini(payload);
+                
+                let feedbackHTML = `<p>${response.message}</p>`;
+
+                if (response.isCorrect === true) {
+                    resultDiv.className = 'result-area w-full md:w-1/3 mt-2 md:mt-0 md:ml-4 text-sm p-3 bg-green-900/50 text-green-300 rounded-lg transition-all duration-300';
+                } else {
+                    resultDiv.className = 'result-area w-full md:w-1/3 mt-2 md:mt-0 md:ml-4 text-sm p-3 bg-red-900/50 text-red-300 rounded-lg transition-all duration-300';
+                    if (response.correctAnswer) {
+                        feedbackHTML += `<p class="mt-2 text-yellow-300 font-semibold">【模範解答】 ${response.correctAnswer}</p>`;
+                    }
+                }
+                resultDiv.innerHTML = feedbackHTML;
+
+            } catch (error) {
+                showErrorMessage(error.message);
+                resultDiv.innerHTML = `<p class="text-red-300">判定エラーが発生しました。</p>`;
+                resultDiv.className = 'result-area w-full md:w-1/3 mt-2 md:mt-0 md:ml-4 text-sm p-3 bg-red-900/50 text-red-300 rounded-lg transition-all duration-300';
+            } finally {
+                toggleLoading(buttonElement, false);
+            }
+        }
+
+        // --- 問題生成ロジック ---
+
+        async function generateNewProblem() {
+            const select = document.getElementById('generator-select');
+            const topicId = select.value;
+            const selectedTopic = grammarTopics.find(t => t.id === topicId);
+            
+            if (!selectedTopic) return;
+
+            const button = document.getElementById('generate-button');
+            const container = document.getElementById('generated-problem-container');
+            const resultDiv = document.getElementById('generated-result');
+            const japaneseEl = document.getElementById('generated-japanese');
+            const answerInput = document.getElementById('generated-answer-input');
+
+            // UIリセット
+            container.classList.add('hidden');
+            resultDiv.innerHTML = '';
+            answerInput.value = '';
+
+            // ローディング表示
+            toggleLoading(button, true, 'generate-text', '問題生成中...');
+
+            const systemPrompt = "あなたはポルトガル語の教育者です。指定された文法テーマと例文のパターンに基づいて、新しい練習問題を1つ作成してください。問題は**日本語の文**と、その模範的な**ポルトガル語訳**で構成されます。JSON形式で返してください。";
+            // 修正済み: selectedTopic.title を使用
+            const userQuery = `文法テーマ: ${selectedTopic.title}\nテーマに含まれる要素や動詞: ${selectedTopic.keywords}\nパターン例:\n${selectedTopic.examples.map(ex => `${ex.jp} → ${ex.pt}`).join('\n')}\n\nこれらを踏まえ、新しい日本語の文とポルトガル語訳を生成してください。`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            "japanese": { "type": "STRING", "description": "新しい日本語の練習問題" },
+                            "portuguese": { "type": "STRING", "description": "新しいポルトガル語の模範解答" }
+                        },
+                        "required": ["japanese", "portuguese"]
+                    }
+                }
+            };
+
+            try {
+                const response = await callGemini(payload);
+
+                if (response.japanese && response.portuguese) {
+                    japaneseEl.textContent = response.japanese;
+                    // 正しい答えをデータ属性に保存して、判定時に利用
+                    answerInput.dataset.correctPt = response.portuguese;
+                    answerInput.dataset.topicTitle = selectedTopic.title;
+                    answerInput.dataset.japanese = response.japanese;
+
+                    container.classList.remove('hidden');
+                } else {
+                    throw new Error("AIが有効な問題を生成できませんでした。");
+                }
+
+            } catch (error) {
+                showErrorMessage(error.message);
+                container.classList.add('hidden');
+            } finally {
+                toggleLoading(button, false, 'generate-text', '新しい問題を生成');
+            }
+        }
+
+
+        // 生成された問題の判定ロジック (APIを使って再度チェックする)
+        async function checkGeneratedAnswer() {
+            const inputElement = document.getElementById('generated-answer-input');
+            const resultDiv = document.getElementById('generated-result');
+            const button = document.getElementById('check-generated-button');
+            
+            const japanesePhrase = inputElement.dataset.japanese;
+            const topicTitle = inputElement.dataset.topicTitle;
+            const userAnswer = inputElement.value.trim();
+
+            if (!userAnswer) {
+                resultDiv.textContent = '解答を入力してください。';
+                resultDiv.className = 'p-3 bg-yellow-900/50 text-yellow-300 rounded-lg';
+                return;
+            }
+
+            // ローディング表示
+            toggleLoading(button, true, 'check-generated-text', '判定中...');
+
+            const systemPrompt = "あなたはポルトガル語の文法と語彙の専門家です。日本語の例文とユーザーのポルトガル語訳が与えられます。文法、語彙、文脈の正確さに基づいて、その翻訳が正しいかどうかを**厳密に**判断してください。判定結果をJSON形式で返してください。**正解の文がない場合は、正しい文を提示してください。**";
+            const userQuery = `文法テーマ: ${topicTitle}\n日本語の例文: ${japanesePhrase}\nユーザーのポルトガル語訳: ${userAnswer}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            "isCorrect": { "type": "BOOLEAN" },
+                            "message": { "type": "STRING", "description": "簡潔なフィードバックメッセージ。" },
+                            "correctAnswer": { "type": "STRING", "description": "もしisCorrectがfalseの場合の正しいポルトガル語の文。必要なければ空にする。" }
+                        },
+                        "required": ["isCorrect", "message"]
+                    }
+                }
+            };
+
+            try {
+                const response = await callGemini(payload);
+                
+                let feedbackHTML = `<p>${response.message}</p>`;
+
+                if (response.isCorrect === true) {
+                    resultDiv.className = 'mt-3 p-3 bg-green-900/50 text-green-300 rounded-lg';
+                } else {
+                    resultDiv.className = 'mt-3 p-3 bg-red-900/50 text-red-300 rounded-lg';
+                    if (response.correctAnswer) {
+                        feedbackHTML += `<p class="mt-2 text-yellow-300 font-semibold">【模範解答】 ${response.correctAnswer}</p>`;
+                    }
+                }
+                resultDiv.innerHTML = feedbackHTML;
+
+            } catch (error) {
+                showErrorMessage(error.message);
+                resultDiv.innerHTML = `<p class="text-red-300">判定エラーが発生しました。</p>`;
+                resultDiv.className = 'mt-3 p-3 bg-red-900/50 text-red-300 rounded-lg';
+            } finally {
+                toggleLoading(button, false, 'check-generated-text', '解答を判定');
+            }
+        }
+
+
+        // --- UIヘルパー関数 ---
+
+        function toggleLoading(button, isLoading, textSpanId, defaultText) {
+            const spinner = button.querySelector('.spinner') || document.getElementById(button.id.replace('-button', '-spinner'));
+            const textSpan = button.querySelector('.button-text') || document.getElementById(textSpanId);
+
+            if (isLoading) {
+                button.disabled = true;
+                button.classList.add('opacity-70', 'cursor-not-allowed');
+                if (spinner) spinner.classList.remove('hidden');
+                if (textSpan) textSpan.textContent = defaultText || '処理中...';
+            } else {
+                button.disabled = false;
+                button.classList.remove('opacity-70', 'cursor-not-allowed');
+                if (spinner) spinner.classList.add('hidden');
+                if (textSpan) textSpan.textContent = defaultText || '判定';
+            }
+        }
+
+    </script>
+</body>
+</html>
