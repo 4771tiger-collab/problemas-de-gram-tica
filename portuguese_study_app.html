@@ -80,9 +80,10 @@
     </div>
 
     <script>
-        // グローバル変数 (Canvas環境に存在する前提)
-        const apiKey = "";
-        const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=" + apiKey;
+        // 【修正点 1】 API KeyとURLの定義を削除またはプロキシエンドポイントに置き換え
+        // GitHubに公開する場合、APIキーはフロントエンドに含めず、サーバーレス関数で処理します。
+        // ここでは Netlify Functions のデフォルトエンドポイントを想定します。
+        const API_PROXY_URL = "/.netlify/functions/gemini-proxy"; 
         
         // Web Speech APIのインスタンス
         const speechSynthesizer = window.speechSynthesis;
@@ -257,6 +258,9 @@
 
         // --- 音声合成（Web Speech API）初期化 ---
         
+        // Web Speech APIのインスタンス
+        // ... (省略: Web Speech API関連の関数は変更なし)
+        
         // 利用可能な音声リストを取得し、ポルトガル語の音声を設定
         function setPortugueseVoice() {
             // ブラウザが音声リストをロードするのを待つ
@@ -398,12 +402,14 @@
 
         // --- AI APIラッパー関数 (指数バックオフ付き) ---
         
-        async function callGemini(payload, url = API_URL, maxRetries = 3) {
+        // 【修正点 2】 APIキーを削除し、プロキシエンドポイントにリクエストを送信するように変更
+        async function callGemini(payload, maxRetries = 3) {
             for (let attempt = 0; attempt < maxRetries; attempt++) {
                 try {
-                    const response = await fetch(url, {
+                    const response = await fetch(API_PROXY_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
+                        // ペイロードにはAPIキーを含めない
                         body: JSON.stringify(payload)
                     });
 
@@ -415,7 +421,9 @@
                     }
 
                     if (!response.ok) {
-                        throw new Error(`APIリクエストエラー: ${response.statusText} (Status: ${response.status})`);
+                        // プロキシ側でエラー処理された場合も捕捉
+                        const errorData = await response.json().catch(() => ({ message: response.statusText }));
+                        throw new Error(`APIリクエストエラー: ${errorData.message} (Status: ${response.status})`);
                     }
 
                     const result = await response.json();
@@ -446,6 +454,7 @@
         // --- 正誤判定ロジック ---
 
         async function checkAnswer(topicId, index, buttonElement) {
+            // ... (ロジック変更なし。callGeminiの引数から url を削除)
             const inputElement = document.getElementById(`${topicId}-q${index}`);
             const resultDiv = document.getElementById(`${topicId}-result${index}`);
             
@@ -483,6 +492,7 @@
             };
 
             try {
+                // 修正: callGeminiからAPI URLの引数を削除
                 const response = await callGemini(payload);
                 
                 let feedbackHTML = `<p>${response.message}</p>`;
@@ -509,6 +519,7 @@
         // --- 問題生成ロジック ---
 
         async function generateNewProblem() {
+            // ... (ロジック変更なし。callGeminiの引数から url を削除)
             const select = document.getElementById('generator-select');
             const topicId = select.value;
             const selectedTopic = grammarTopics.find(t => t.id === topicId);
@@ -550,6 +561,7 @@
             };
 
             try {
+                // 修正: callGeminiからAPI URLの引数を削除
                 const response = await callGemini(payload);
 
                 if (response.japanese && response.portuguese) {
@@ -575,6 +587,7 @@
 
         // 生成された問題の判定ロジック (APIを使って再度チェックする)
         async function checkGeneratedAnswer() {
+            // ... (ロジック変更なし。callGeminiの引数から url を削除)
             const inputElement = document.getElementById('generated-answer-input');
             const resultDiv = document.getElementById('generated-result');
             const button = document.getElementById('check-generated-button');
@@ -613,6 +626,7 @@
             };
 
             try {
+                // 修正: callGeminiからAPI URLの引数を削除
                 const response = await callGemini(payload);
                 
                 let feedbackHTML = `<p>${response.message}</p>`;
